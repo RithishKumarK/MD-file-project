@@ -1,0 +1,183 @@
+// Captures the visible conversation on a claude.ai tab.
+//
+// NOTE ON FRAGILITY: same caveat as the ChatGPT content script -- Claude has
+// no public real-time export API, so this reads the rendered DOM. Claude's
+// selectors change more often than ChatGPT's; if capture returns 0 messages,
+// open devtools on a conversation, inspect a user/assistant bubble, and
+// update SELECTORS below. Two selector strategies are tried in order.
+(function () {
+  const SELECTOR_STRATEGIES = [
+    {
+      user: '[data-testid="user-message"], .font-user-message',
+      assistant: '[data-testid="assistant-message"], [data-testid="chat-message"], .font-claude-message, [class*="claude-message"], [class*="assistant-message"]',
+    },
+    {
+      // Fallback strategies for custom DOM containers
+      user: ".font-user-message, div.font-user",
+      assistant: ".font-claude-message, div.font-claude, .chat-message",
+    },
+  ];
+
+  // Sidebar history links look like <a href="/chat/<uuid>">Title</a>. This is
+  // a guess at current markup and the most likely thing to need a tweak.
+  const SIDEBAR_LINK_SELECTOR = 'a[href^="/chat/"]';
+
+  function listConversations() {
+    const links = Array.from(document.querySelectorAll(SIDEBAR_LINK_SELECTOR));
+    if (links.length === 0) {
+      return { ok: false, error: "No conversation list found in the sidebar. Is it open?" };
+    }
+    const seen = new Set();
+    const conversations = [];
+    for (const a of links) {
+      const href = a.getAttribute("href");
+      if (!href || seen.has(href)) continue;
+      seen.add(href);
+      conversations.push({
+        url: new URL(href, location.origin).href,
+        title: a.textContent.trim() || "Untitled conversation",
+      });
+    }
+    return { ok: true, conversations };
+  }
+
+  function extractConversation() {
+    let userEls = [];
+    let assistantEls = [];
+    let bestUserEls = [];
+    let bestAssistantEls = [];
+
+    for (const strategy of SELECTOR_STRATEGIES) {
+      const user = Array.from(document.querySelectorAll(strategy.user));
+      const assistant = Array.from(document.querySelectorAll(strategy.assistant));
+      if (user.length > 0 && assistant.length > 0) {
+        userEls = user;
+        assistantEls = assistant;
+        break;
+      }
+      if (user.length > bestUserEls.length) bestUserEls = user;
+      if (assistant.length > bestAssistantEls.length) bestAssistantEls = assistant;
+    }
+
+    if (userEls.length === 0 || assistantEls.length === 0) {
+      userEls = bestUserEls;
+      assistantEls = bestAssistantEls;
+    }
+
+    if (userEls.length === 0 || assistantEls.length === 0) {
+      if (window.NoetisCapture) {
+        const fallback = window.NoetisCapture.genericExtract("claude");
+        if (fallback.ok) return fallback;
+      }
+      return { ok: false, error: "No complete conversation found on this page. Open a conversation first." };
+    }
+
+    // Merge both lists back into document order using their position in the DOM.
+    const tagged = [
+      ...userEls.map((el) => ({ el, role: "user" })),
+      ...assistantEls.map((el) => ({ el, role: "assistant" })),
+    ].sort((a, b) => {
+      const pos = a.el.compareDocumentPosition(b.el);
+      if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+      if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+      return 0;
+    });
+
+    const messages = tagged.map(({ el, role }) => ({
+      role,
+      content: el.innerText.trim(),
+    }));
+
+    const title = document.title.replace(/\s*[-|]\s*Claude\s*$/i, "").trim() || "Untitled conversation";
+
+    return {
+      ok: true,
+      conversation: {
+        provider: "claude",
+        title,
+        url: location.href,
+        capturedAt: new Date().toISOString(),
+        messages,
+      },
+    };
+  }
+
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === "PERSONAMD_CAPTURE") {
+      sendResponse(extractConversation());
+      return true;
+    }
+    if (message?.type === "PERSONAMD_LIST_CONVERSATIONS") {
+      sendResponse(listConversations());
+      return true;
+    }
+  });
+
+  // --- Usage-limit detection -------------------------------------------
+  // NOTE ON FRAGILITY: plain-text phrase scan, not an API signal (there
+  // isn't one) -- if Claude rewords its limit banner, update LIMIT_PHRASES.
+  const LIMIT_PHRASES = [
+    /reached (your|the) (usage|message) limit/i,
+    /usage limit/i,
+    /message limit/i,
+    /your limit resets/i,
+    /please wait until/i,
+    /upgrade to (continue|get more messages)/i,
+    /come back (later|tomorrow)/i,
+  ];
+
+  let limitAlreadyReported = false;
+
+  function scanForLimitBanner() {
+    if (limitAlreadyReported) return;
+    const text = document.body.innerText || "";
+    if (!LIMIT_PHRASES.some((re) => re.test(text))) return;
+
+    const result = extractConversation();
+    if (!result.ok) return; // nothing meaningful to capture yet
+
+    limitAlreadyReported = true;
+    chrome.runtime.sendMessage({ type: "PERSONAMD_LIMIT_DETECTED", conversation: result.conversation });
+  }
+
+  let scanTimeout = null;
+  const observer = new MutationObserver(() => {
+    clearTimeout(scanTimeout);
+    scanTimeout = setTimeout(scanForLimitBanner, 800);
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  scanForLimitBanner(); // in case the banner is already showing on load
+
+  // --- In-page "Save to Noetis" button -----------------------------------
+  // Docks inline in the composer's own icon row (next to the attach/voice
+  // buttons) when it can find one of those icons -- see capture-widget.js,
+  // loaded just before this file (manifest.json order matters). Falls back
+  // to floating near the Send button, then a fixed corner. Candidate
+  // selectors are best-effort -- Claude's markup changes more often than
+  // ChatGPT's, so if the button lands in the fallback bottom-right corner
+  // instead of docked in the composer, inspect the composer in devtools and
+  // add the current selector to the front of the relevant list.
+  if (window.NoetisCapture) {
+    window.NoetisCapture.mount({
+      provider: "claude",
+      extractConversation,
+      dockAnchorSelectors: [
+        'button[aria-haspopup="menu"]',
+        'button[aria-label*="model" i]',
+        'button[aria-label*="Sonnet" i]',
+        'button[aria-label*="Claude" i]',
+        'button[aria-label="Attach"]',
+        'button[aria-label*="voice" i]',
+        'button[aria-label*="dictate" i]',
+      ],
+      anchorSelectors: [
+        'button[aria-label="Send Message"]',
+        'button[aria-label="Send message"]',
+        'form button[type="submit"]',
+      ],
+      // Used only by the "Paste" button. Claude's composer is a
+      // ProseMirror-based contenteditable div, not a <textarea>.
+      composerSelectors: ['div[contenteditable="true"].ProseMirror', 'div[contenteditable="true"]'],
+    });
+  }
+})();

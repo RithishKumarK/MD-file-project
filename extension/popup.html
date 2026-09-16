@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="topbar">
+      <div class="brand">
+        <svg class="mark" width="20" height="20" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="noetisPopupMark" x1="6" y1="10" x2="58" y2="46" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#B8FF33" />
+              <stop offset="55%" stop-color="#111111" />
+              <stop offset="100%" stop-color="#A2DF29" />
+            </linearGradient>
+          </defs>
+          <path
+            d="M8 20C8 14 17 10 32 16C47 10 56 14 56 20V44C56 44 47 38 32 44C17 38 8 44 8 44V20Z"
+            stroke="url(#noetisPopupMark)"
+            stroke-width="4"
+            stroke-linejoin="round"
+            stroke-linecap="round"
+          />
+          <path d="M32 16V44" stroke="url(#noetisPopupMark)" stroke-width="3.5" stroke-linecap="round" />
+          <path d="M32 16V8" stroke="url(#noetisPopupMark)" stroke-width="3.5" stroke-linecap="round" />
+          <path d="M32 8L21 13" stroke="url(#noetisPopupMark)" stroke-width="2.5" stroke-linecap="round" />
+          <path d="M32 8L43 13" stroke="url(#noetisPopupMark)" stroke-width="2.5" stroke-linecap="round" />
+          <circle cx="32" cy="8" r="4.5" fill="url(#noetisPopupMark)" />
+          <circle cx="21" cy="13" r="3" fill="url(#noetisPopupMark)" />
+          <circle cx="43" cy="13" r="3" fill="url(#noetisPopupMark)" />
+        </svg>
+        <h1>Noetis Capture</h1>
+      </div>
+      <div id="connectionBadge" class="connection-badge">
+        <span class="dot"></span>
+        <span id="connectionText">Checking</span>
+      </div>
+    </div>
+    <p class="hint">
+      Capture ChatGPT or Claude conversations. Auto-push forwards them immediately to your Noetis app.
+    </p>
+
+    <div class="section-label">Connection Settings</div>
+    <div class="group-card">
+      <label class="row" for="autoPush">
+        <span class="row-label">Auto-push to Noetis</span>
+        <span class="switch">
+          <input type="checkbox" id="autoPush" />
+          <span class="track"></span>
+        </span>
+      </label>
+
+      <!-- Advanced settings panel: Base URL and Access Key are hidden here -->
+      <details class="advanced-settings">
+        <summary class="advanced-summary">Advanced Settings</summary>
+        <div class="advanced-content">
+          <div class="row field-row">
+            <div class="field-header">
+              <span class="field-label">Base URL</span>
+              <span id="badgeDev" class="badge-dev">Local Dev</span>
+            </div>
+            <input type="text" id="baseUrl" class="input-control" placeholder="https://noetis.vercel.app" />
+          </div>
+          <div class="row field-row">
+            <span class="field-label">Access key</span>
+            <div class="input-group">
+              <!-- Access key is protected: View and Copy buttons are removed for safety -->
+              <input type="password" id="accessKey" class="input-control" placeholder="NEXT_PUBLIC_APP_ACCESS_KEY" />
+              <button type="button" id="resetKey" class="icon-btn danger" title="Clear / Reset Key">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <div class="row field-row">
+        <span class="field-label">Active Skill (for Skills.md)</span>
+        <select id="activeSkill" class="input-control">
+          <option value="">All Skills (Concatenated)</option>
+        </select>
+      </div>
+      <div class="row" style="padding: 10px 12px; align-items: center; justify-content: space-between;">
+        <span class="row-label" style="font-size: 11px; color: var(--text-secondary);">Floating Button</span>
+        <button type="button" id="resetPosition">Reset Position</button>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="capture" class="action-btn primary-btn">Capture this tab</button>
+      <button id="captureAll" class="action-btn secondary-btn">Capture all recent</button>
+    </div>
+    <div id="progressTrack" class="progress-track"><div id="progressFill" class="progress-fill"></div></div>
+    <div id="status" class="status"></div>
+
+    <div class="section-label">Captured Conversations</div>
+    <div class="group-card">
+      <ul id="list"></ul>
+    </div>
+
+    <div class="footer-actions">
+      <button id="download" class="plain-btn">Download JSON</button>
+      <button id="clear" class="plain-btn danger-btn">Clear all</button>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>
